@@ -44,11 +44,11 @@ The easiest way to build the system for the Pi-Puck is to use Docker. Given you 
 ```sh
 sudo docker build -t yocto-pipuck:latest https://github.com/iridia-ulb/meta-pipuck.git#:docker \
  --build-arg host_user_id=$(id -u) \
- --build-arg host_group_id=(id -g)
+ --build-arg host_group_id=$(id -g)
 ```
 Once the above command has completed sucessfully, you can run the following command to create a container from the image. Note the two paths given after the `-v` option. The format of this argument is `path/on/host:path/in/container` where `path/on/host` is a directory on your host system and `path/in/container` is a directory inside the Docker container. This command will map the home directory inside the container to a directory called `yocto-pipuck` under the current users home directory on the host.
 ```sh
-sudo docker create --tty --interactive --volume /home/$(id -un)/yocto-pipuck:/home/$(id -un) \
+sudo docker create --tty --interactive --volume /home/$(id -un)/yocto-pipuck:/home/developer \
  --name yocto-pipuck --hostname yocto-pipuck yocto-pipuck:latest
 ```
 After executing this command, you should have a new container with the build environment. The following commands will start and attach to that container.
