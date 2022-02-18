@@ -1,2 +1,2 @@
-EXTRA_OECMAKE_append = " -DLOG_LEVEL=Error"
-PACKAGECONFIG_append = " libiio-python3"
+EXTRA_OECMAKE:append = " -DLOG_LEVEL=Error"
+PACKAGECONFIG:append = " libiio-python3"
