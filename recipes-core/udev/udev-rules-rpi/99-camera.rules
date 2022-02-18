@@ -1,0 +1,3 @@
+DEVPATH=="/devices/platform/soc/20980000.usb/usb1/1-1/1-1.1/*", SUBSYSTEM=="video4linux", ENV{ID_V4L_CAPABILITIES}==":capture:", SYMLINK+="camera0"
+SUBSYSTEM=="video4linux", ENV{ID_V4L_PRODUCT}=="bcm2835-isp", ENV{ID_V4L_CAPABILITIES}==":capture:", SYMLINK+="camera1"
+
