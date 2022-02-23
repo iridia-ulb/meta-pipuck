@@ -1,0 +1,80 @@
+From 083237338b57327cd10058b70f363bd12f86c8e2 Mon Sep 17 00:00:00 2001
+From: Your Name <you@example.com>
+Date: Wed, 23 Feb 2022 15:32:33 +0100
+Subject: [PATCH] Set library SO versions
+
+---
+ core/CMakeLists.txt                   | 1 +
+ encoder/CMakeLists.txt                | 1 +
+ image/CMakeLists.txt                  | 1 +
+ output/CMakeLists.txt                 | 1 +
+ post_processing_stages/CMakeLists.txt | 1 +
+ preview/CMakeLists.txt                | 1 +
+ 6 files changed, 6 insertions(+)
+
+diff --git a/core/CMakeLists.txt b/core/CMakeLists.txt
+index a074717..04b3968 100644
+--- a/core/CMakeLists.txt
++++ b/core/CMakeLists.txt
+@@ -13,4 +13,5 @@ add_dependencies(libcamera_app VersionCpp)
+ set_target_properties(libcamera_app PROPERTIES PREFIX "" IMPORT_PREFIX "")
+ target_link_libraries(libcamera_app pthread preview ${LIBCAMERA_LINK_LIBRARIES} ${Boost_LIBRARIES} post_processing_stages)
+ 
++set_target_properties(libcamera_app  PROPERTIES VERSION 0.0.0 SOVERSION 0)
+ install(TARGETS libcamera_app LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+diff --git a/encoder/CMakeLists.txt b/encoder/CMakeLists.txt
+index 49e4524..01fe269 100644
+--- a/encoder/CMakeLists.txt
++++ b/encoder/CMakeLists.txt
+@@ -5,5 +5,6 @@ include(GNUInstallDirs)
+ add_library(encoders encoder.cpp null_encoder.cpp h264_encoder.cpp mjpeg_encoder.cpp)
+ target_link_libraries(encoders jpeg)
+ 
++set_target_properties(encoders  PROPERTIES VERSION 0.0.0 SOVERSION 0)
+ install(TARGETS encoders LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+ 
+diff --git a/image/CMakeLists.txt b/image/CMakeLists.txt
+index c4bf976..bd58dc0 100644
+--- a/image/CMakeLists.txt
++++ b/image/CMakeLists.txt
+@@ -10,4 +10,5 @@ find_library(PNG_LIBRARY png REQUIRED)
+ add_library(images bmp.cpp yuv.cpp jpeg.cpp png.cpp dng.cpp)
+ target_link_libraries(images jpeg exif png tiff)
+ 
++set_target_properties(images  PROPERTIES VERSION 0.0.0 SOVERSION 0)
+ install(TARGETS images LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+diff --git a/output/CMakeLists.txt b/output/CMakeLists.txt
+index 1b2f026..9542116 100644
+--- a/output/CMakeLists.txt
++++ b/output/CMakeLists.txt
+@@ -4,5 +4,6 @@ include(GNUInstallDirs)
+ 
+ add_library(outputs output.cpp file_output.cpp net_output.cpp circular_output.cpp)
+ 
++set_target_properties(outputs  PROPERTIES VERSION 0.0.0 SOVERSION 0)
+ install(TARGETS outputs LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+ 
+diff --git a/post_processing_stages/CMakeLists.txt b/post_processing_stages/CMakeLists.txt
+index 99745f8..accf3c7 100644
+--- a/post_processing_stages/CMakeLists.txt
++++ b/post_processing_stages/CMakeLists.txt
+@@ -52,4 +52,5 @@ add_library(post_processing_stages ${SRC})
+ target_link_libraries(post_processing_stages ${TARGET_LIBS})
+ target_compile_definitions(post_processing_stages PUBLIC OPENCV_PRESENT=${OpenCV_FOUND})
+ 
++set_target_properties(post_processing_stages  PROPERTIES VERSION 0.0.0 SOVERSION 0)
+ install(TARGETS post_processing_stages LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+diff --git a/preview/CMakeLists.txt b/preview/CMakeLists.txt
+index 1a7481f..54cacbb 100644
+--- a/preview/CMakeLists.txt
++++ b/preview/CMakeLists.txt
+@@ -70,5 +70,6 @@ target_compile_definitions(preview PUBLIC LIBDRM_PRESENT=${DRM_FOUND})
+ target_compile_definitions(preview PUBLIC LIBEGL_PRESENT=${EGL_FOUND})
+ target_compile_definitions(preview PUBLIC QT_PRESENT=${QT_FOUND})
+ 
++set_target_properties(preview  PROPERTIES VERSION 0.0.0 SOVERSION 0)
+ install(TARGETS preview LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+ 
+-- 
+2.25.1
+

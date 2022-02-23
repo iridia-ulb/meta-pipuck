@@ -1,0 +1,21 @@
+From 586c3cbabd3165f0d18c80f7537ee272538c0e9d Mon Sep 17 00:00:00 2001
+From: Your Name <you@example.com>
+Date: Wed, 23 Feb 2022 15:42:55 +0100
+Subject: [PATCH] Ignore utils
+
+---
+ CMakeLists.txt | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 748c6dd..29ce5e4 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -59,4 +59,3 @@ add_subdirectory(output)
+ add_subdirectory(preview)
+ add_subdirectory(post_processing_stages)
+ add_subdirectory(apps)
+-add_subdirectory(utils)
+-- 
+2.25.1
+

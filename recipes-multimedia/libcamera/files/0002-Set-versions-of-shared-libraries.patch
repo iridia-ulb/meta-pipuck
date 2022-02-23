@@ -1,0 +1,79 @@
+From 7c3530a8c3786c72076b8707cacdca3733c675e1 Mon Sep 17 00:00:00 2001
+From: Your Name <you@example.com>
+Date: Wed, 23 Feb 2022 16:28:42 +0100
+Subject: [PATCH] Set versions of shared libraries
+
+---
+ src/android/meson.build        | 2 ++
+ src/gstreamer/meson.build      | 2 ++
+ src/libcamera/base/meson.build | 1 +
+ src/libcamera/meson.build      | 1 +
+ src/v4l2/meson.build           | 2 ++
+ 5 files changed, 8 insertions(+)
+
+diff --git a/src/android/meson.build b/src/android/meson.build
+index 332b177c..9939b013 100644
+--- a/src/android/meson.build
++++ b/src/android/meson.build
+@@ -71,6 +71,8 @@ android_camera_metadata = static_library('camera_metadata',
+ 
+ libcamera_hal = shared_library('libcamera-hal',
+                                android_hal_sources,
++                               version : libcamera_version,
++                               soversion: libcamera_version.split('.')[0],
+                                name_prefix : '',
+                                link_with : android_camera_metadata,
+                                install : true,
+diff --git a/src/gstreamer/meson.build b/src/gstreamer/meson.build
+index 77c79140..24ea10eb 100644
+--- a/src/gstreamer/meson.build
++++ b/src/gstreamer/meson.build
+@@ -41,6 +41,8 @@ endif
+ 
+ libcamera_gst = shared_library('gstlibcamera',
+     libcamera_gst_sources,
++    version : libcamera_version,
++    soversion: libcamera_version.split('.')[0],
+     cpp_args : libcamera_gst_cpp_args,
+     dependencies : [libcamera_public, gstvideo_dep, gstallocator_dep],
+     install: true,
+diff --git a/src/libcamera/base/meson.build b/src/libcamera/base/meson.build
+index 0ae3b0aa..39613395 100644
+--- a/src/libcamera/base/meson.build
++++ b/src/libcamera/base/meson.build
+@@ -51,6 +51,7 @@ libcamera_base_args = [ '-DLIBCAMERA_BASE_PRIVATE' ]
+ libcamera_base_lib = shared_library('libcamera-base',
+                                     [libcamera_base_sources, libcamera_base_headers],
+                                     version : libcamera_version,
++                                    soversion: libcamera_version.split('.')[0],
+                                     name_prefix : '',
+                                     install : true,
+                                     cpp_args : libcamera_base_args,
+diff --git a/src/libcamera/meson.build b/src/libcamera/meson.build
+index 2e54cc04..ec8499ca 100644
+--- a/src/libcamera/meson.build
++++ b/src/libcamera/meson.build
+@@ -134,6 +134,7 @@ libcamera_deps = [
+ libcamera = shared_library('libcamera',
+                            libcamera_sources,
+                            version : libcamera_version,
++                           soversion: libcamera_version.split('.')[0],
+                            name_prefix : '',
+                            install : true,
+                            include_directories : includes,
+diff --git a/src/v4l2/meson.build b/src/v4l2/meson.build
+index f78497b6..b73dfaed 100644
+--- a/src/v4l2/meson.build
++++ b/src/v4l2/meson.build
+@@ -29,6 +29,8 @@ v4l2_compat_cpp_args = [
+ 
+ v4l2_compat = shared_library('v4l2-compat',
+                              v4l2_compat_sources,
++                             version : libcamera_version,
++                             soversion: libcamera_version.split('.')[0],
+                              name_prefix : '',
+                              install : true,
+                              dependencies : [libcamera_private, libdl],
+-- 
+2.25.1
+

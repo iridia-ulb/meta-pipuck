@@ -1,0 +1,25 @@
+From e478b0ac0618b8e0bef96f731e78ccca1d6c6558 Mon Sep 17 00:00:00 2001
+From: Your Name <you@example.com>
+Date: Wed, 23 Feb 2022 14:37:03 +0100
+Subject: [PATCH] Rename fd() to get()
+
+---
+ src/libcamera/framebuffer.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/libcamera/framebuffer.cpp b/src/libcamera/framebuffer.cpp
+index ee93ba4d..d3b9c86b 100644
+--- a/src/libcamera/framebuffer.cpp
++++ b/src/libcamera/framebuffer.cpp
+@@ -258,7 +258,7 @@ FrameBuffer::FrameBuffer(const std::vector<Plane> &planes, unsigned int cookie)
+ 		 * Two different dmabuf file descriptors may still refer to the
+ 		 * same dmabuf instance. Check this using inodes.
+ 		 */
+-		if (plane.fd.fd() != planes_[0].fd.fd()) {
++		if (plane.fd.get() != planes_[0].fd.get()) {
+ 			if (!inode)
+ 				inode = fileDescriptorInode(planes_[0].fd);
+ 			if (fileDescriptorInode(plane.fd) != inode) {
+-- 
+2.25.1
+
