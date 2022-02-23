@@ -3,12 +3,6 @@
 #
 #
 MACHINE = "raspberrypi0-wifi"
-# TODO just hardcode these options into config.txt
-ENABLE_UART = "1"
-ENABLE_I2C = "1"
-GPU_MEM = "128"
-VIDEO_CAMERA = "1"
-RASPBERRYPI_CAMERA_V1 = "1"
 
 #
 # Default policy config
