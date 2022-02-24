@@ -25,7 +25,7 @@ DEPENDS += "${@bb.utils.contains('DISTRO_FEATURES', 'qt', 'qtbase qtbase-native'
 
 PACKAGES =+ "${PN}-gst"
 
-PACKAGECONFIG ??= "raspberrypi"
+PACKAGECONFIG ??= "raspberrypi v4l2"
 PACKAGECONFIG[gst] = "-Dgstreamer=enabled,-Dgstreamer=disabled,gstreamer1.0 gstreamer1.0-plugins-base"
 PACKAGECONFIG[v4l2] = "-Dv4l2=true,-Dv4l2=false"
 PACKAGECONFIG[raspberrypi] = "-Dpipelines=raspberrypi"
@@ -54,4 +54,7 @@ do_recalculate_ipa_signatures_package() {
 
     ${S}/src/ipa/ipa-sign-install.sh ${B}/src/ipa-priv-key.pem "${modules}"
 }
+
+FILES:${PN} += "${libdir}/v4l2-compat.so.*"
+FILES:${PN}-dev += "${libdir}/v4l2-compat.so"
 
