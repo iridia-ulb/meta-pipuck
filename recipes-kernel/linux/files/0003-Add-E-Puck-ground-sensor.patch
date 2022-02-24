@@ -1,0 +1,218 @@
+From 5740ab394c7e8d05309d02e436e0705a681dbbbb Mon Sep 17 00:00:00 2001
+From: OpenEmbedded <oe.patch@oe>
+Date: Tue, 22 Feb 2022 12:48:08 +0100
+Subject: [PATCH] Add E-Puck ground sensor
+
+---
+ drivers/iio/light/Kconfig              |   9 ++
+ drivers/iio/light/Makefile             |   1 +
+ drivers/iio/light/epuck-groundsensor.c | 165 +++++++++++++++++++++++++
+ 3 files changed, 175 insertions(+)
+ create mode 100644 drivers/iio/light/epuck-groundsensor.c
+
+diff --git a/drivers/iio/light/Kconfig b/drivers/iio/light/Kconfig
+index 917f9becf9c7..2190a62a4e95 100644
+--- a/drivers/iio/light/Kconfig
++++ b/drivers/iio/light/Kconfig
+@@ -174,6 +174,15 @@ config CM36651
+ 	  To compile this driver as a module, choose M here:
+ 	  the module will be called cm36651.
+ 
++config EPUCK_GS
++	depends on I2C
++	tristate "E-Puck ground sensors driver"
++	help
++	  Say Y here if you use the E-Puck ground sensors.
++
++	  To compile this driver as a module, choose M here:
++	  the module will be called epuck-groundsensors.
++
+ config IIO_CROS_EC_LIGHT_PROX
+ 	tristate "ChromeOS EC Light and Proximity Sensors"
+ 	depends on IIO_CROS_EC_SENSORS_CORE
+diff --git a/drivers/iio/light/Makefile b/drivers/iio/light/Makefile
+index ea376deaca54..cf44aef5cbcc 100644
+--- a/drivers/iio/light/Makefile
++++ b/drivers/iio/light/Makefile
+@@ -20,6 +20,7 @@ obj-$(CONFIG_CM3323)		+= cm3323.o
+ obj-$(CONFIG_CM3605)		+= cm3605.o
+ obj-$(CONFIG_CM36651)		+= cm36651.o
+ obj-$(CONFIG_IIO_CROS_EC_LIGHT_PROX) += cros_ec_light_prox.o
++obj-$(CONFIG_EPUCK_GS)		+= epuck-groundsensor.o
+ obj-$(CONFIG_GP2AP002)		+= gp2ap002.o
+ obj-$(CONFIG_GP2AP020A00F)	+= gp2ap020a00f.o
+ obj-$(CONFIG_HID_SENSOR_ALS)	+= hid-sensor-als.o
+diff --git a/drivers/iio/light/epuck-groundsensor.c b/drivers/iio/light/epuck-groundsensor.c
+new file mode 100644
+index 000000000000..4f5be53b79a6
+--- /dev/null
++++ b/drivers/iio/light/epuck-groundsensor.c
+@@ -0,0 +1,165 @@
++// SPDX-License-Identifier: GPL-2.0+
++
++/*
++ * Ground sensors driver for the e-puck
++ *
++ * Copyright (C) 2020 Michael Allwright
++ */
++
++#include <linux/delay.h>
++#include <linux/irq.h>
++#include <linux/kernel.h>
++#include <linux/i2c.h>
++#include <linux/module.h>
++#include <linux/of_device.h>
++#include <linux/sched.h>
++#include <linux/slab.h>
++#include <linux/iio/buffer.h>
++#include <linux/iio/iio.h>
++#include <linux/iio/sysfs.h>
++#include <linux/iio/trigger.h>
++#include <linux/iio/trigger_consumer.h>
++#include <linux/iio/triggered_buffer.h>
++
++/**
++ * struct epuck_groundsensors - The ground sensors driver for the E-Puck
++ *
++ * @client: Pointer to the I2C client
++ */
++struct epuck_groundsensors {
++        struct i2c_client *client;
++};
++
++static const struct iio_info epuck_groundsensors_info = {};
++
++#define EPUCK_GROUNDSENSOR(_index) {	\
++	.type = IIO_LIGHT,		\
++	.indexed = true,		\
++	.channel = _index,		\
++	.output = false,		\
++	.scan_index = _index,		\
++	.scan_type = {			\
++		.sign = 'u',		\
++		.realbits = 16,		\
++		.storagebits = 16,	\
++		.endianness = IIO_BE,	\
++	},				\
++}, {					\
++	.type = IIO_LIGHT,		\
++	.indexed = true,		\
++	.channel = _index + 3,		\
++	.output = false,		\
++	.scan_index = _index + 3,	\
++	.scan_type = {			\
++		.sign = 'u',		\
++		.realbits = 16,		\
++		.storagebits = 16,	\
++		.endianness = IIO_BE,	\
++	},				\
++}
++
++static const struct iio_chan_spec epuck_groundsensors_channels[] = {
++	EPUCK_GROUNDSENSOR(0),
++	EPUCK_GROUNDSENSOR(1),
++	EPUCK_GROUNDSENSOR(2),
++	/* each of the above occupies scan index + 3 */
++	IIO_CHAN_SOFT_TIMESTAMP(6),
++};
++
++static const unsigned long epuck_groundsensors_scan_masks[] = {0x3f, 0};
++
++static irqreturn_t epuck_groundsensors_trigger_handler(int irq, void *p)
++{
++	struct iio_poll_func *pf = p;
++	struct iio_dev *indio_dev = pf->indio_dev;
++	struct epuck_groundsensors *groundsensors = iio_priv(indio_dev);
++	
++	int ret;
++	u8 data[12];
++
++        ret = i2c_smbus_read_i2c_block_data(groundsensors->client, 0, 12, data);
++
++        if(ret != 12) {
++                dev_err(&groundsensors->client->dev, "ret = %d", ret);
++                goto out;
++        }
++
++	iio_push_to_buffers_with_timestamp(indio_dev, data,
++					   iio_get_time_ns(indio_dev));
++out:
++	iio_trigger_notify_done(indio_dev->trig);
++	return IRQ_HANDLED;
++}
++
++static int epuck_groundsensors_probe(struct i2c_client *client,
++			             const struct i2c_device_id *id)
++{
++	struct device *dev = &client->dev; // us
++	struct iio_dev *indio_dev;
++	struct epuck_groundsensors *groundsensors;
++	int ret = 0;
++	indio_dev = devm_iio_device_alloc(dev, sizeof(*groundsensors));
++	if (!indio_dev)
++		return -ENOMEM;
++        i2c_set_clientdata(client, indio_dev);
++        /* get the memory for epuck_groundsensors as allocated by devm_iio_device_alloc */
++	groundsensors = iio_priv(indio_dev);
++	/* set the i2c client */
++	groundsensors->client = client;
++        
++	/* set up the indio_dev struct */
++	indio_dev->name = "epuck-groundsensors";
++	indio_dev->dev.parent = dev;
++	indio_dev->info = &epuck_groundsensors_info;
++	indio_dev->direction = IIO_DEVICE_DIRECTION_IN;
++	indio_dev->modes = INDIO_BUFFER_SOFTWARE;
++	indio_dev->channels = epuck_groundsensors_channels;
++	indio_dev->num_channels = ARRAY_SIZE(epuck_groundsensors_channels);
++	indio_dev->available_scan_masks = epuck_groundsensors_scan_masks;
++	ret = iio_triggered_buffer_setup(indio_dev,
++					 iio_pollfunc_store_time,
++					 epuck_groundsensors_trigger_handler,
++					 NULL);
++	if(ret < 0)
++		goto err_out;
++	ret = iio_device_register(indio_dev);
++err_out:
++	return ret;
++}
++
++static int epuck_groundsensors_remove(struct i2c_client *client)
++{
++	struct iio_dev *indio_dev = i2c_get_clientdata(client);
++
++	iio_triggered_buffer_cleanup(indio_dev);
++	iio_device_unregister(indio_dev);
++
++	return 0;
++}
++
++static const struct i2c_device_id epuck_groundsensors_id[] = {
++	{ "epuck-groundsensors", 0 },
++	{ /* sentinel */ }
++};
++MODULE_DEVICE_TABLE(i2c, epuck_groundsensors_id);
++
++static const struct of_device_id epuck_groundsensors_of_match[] = {
++	{ .compatible = "gctronic,epuck-groundsensors" },
++	{ /* sentinel */ }
++};
++MODULE_DEVICE_TABLE(of, epuck_groundsensors_of_match);
++
++static struct i2c_driver epuck_groundsensors_driver = {
++	.probe  = epuck_groundsensors_probe,
++        .remove = epuck_groundsensors_remove,
++        .driver = {
++		.name = "epuck-groundsensors",
++		.of_match_table = epuck_groundsensors_of_match,
++	},
++	.id_table = epuck_groundsensors_id,
++};
++module_i2c_driver(epuck_groundsensors_driver);
++
++MODULE_LICENSE("GPL");
++MODULE_AUTHOR("Michael Allwright <allsey87@gmail.com>");
++MODULE_DESCRIPTION("E-Puck ground sensors driver");
+-- 
+2.25.1
+

@@ -1,0 +1,1078 @@
+From e42049aa4681d9d587fefdc33defce6fde9abed2 Mon Sep 17 00:00:00 2001
+From: OpenEmbedded <oe.patch@oe>
+Date: Tue, 22 Feb 2022 12:19:43 +0100
+Subject: [PATCH] Add E-Puck multi-function device
+
+---
+ drivers/mfd/Kconfig              |  27 +++++
+ drivers/mfd/Makefile             |   6 +
+ drivers/mfd/epuck-core.c         | 182 +++++++++++++++++++++++++++++
+ drivers/mfd/epuck-encoders.c     | 154 ++++++++++++++++++++++++
+ drivers/mfd/epuck-leds.c         | 195 +++++++++++++++++++++++++++++++
+ drivers/mfd/epuck-motors.c       | 187 +++++++++++++++++++++++++++++
+ drivers/mfd/epuck-rangefinders.c | 191 ++++++++++++++++++++++++++++++
+ include/linux/mfd/epuck.h        |  53 +++++++++
+ 8 files changed, 995 insertions(+)
+ create mode 100644 drivers/mfd/epuck-core.c
+ create mode 100644 drivers/mfd/epuck-encoders.c
+ create mode 100644 drivers/mfd/epuck-leds.c
+ create mode 100644 drivers/mfd/epuck-motors.c
+ create mode 100644 drivers/mfd/epuck-rangefinders.c
+ create mode 100644 include/linux/mfd/epuck.h
+
+diff --git a/drivers/mfd/Kconfig b/drivers/mfd/Kconfig
+index 525cb2c70538..ec5965b73de2 100644
+--- a/drivers/mfd/Kconfig
++++ b/drivers/mfd/Kconfig
+@@ -19,6 +19,33 @@ config MFD_RPISENSE_CORE
+ 	  This is the core driver for the Raspberry Pi Sense HAT. This provides
+ 	  the necessary functions to communicate with the hardware.
+ 
++config MFD_EPUCK_CORE
++	tristate "Core support for E-Puck mobile robot"
++	depends on I2C
++	select MFD_CORE
++	help
++	  Say yes here if you want to enable the peripherals attached to the
++	  E-Puck mobile robot.
++
++menu "Support for peripherals on the E-Puck mobile robot"
++	depends on MFD_EPUCK_CORE
++	depends on IIO_BUFFER
++	depends on IIO_TRIGGERED_BUFFER
++
++config MFD_EPUCK_MOTORS
++	tristate "Support for the motors"
++
++config MFD_EPUCK_ENCODERS
++	tristate "Support for the shaft encoders"
++
++config MFD_EPUCK_LEDS
++	tristate "Support for the LEDs"
++
++config MFD_EPUCK_RANGEFINDERS
++	tristate "Support for the rangefinders"
++
++endmenu
++
+ config MFD_CS5535
+ 	tristate "AMD CS5535 and CS5536 southbridge core functions"
+ 	select MFD_CORE
+diff --git a/drivers/mfd/Makefile b/drivers/mfd/Makefile
+index d6091f3b1ca3..12198fdaa403 100644
+--- a/drivers/mfd/Makefile
++++ b/drivers/mfd/Makefile
+@@ -265,6 +265,12 @@ obj-$(CONFIG_MFD_STMFX) 	+= stmfx.o
+ obj-$(CONFIG_MFD_KHADAS_MCU) 	+= khadas-mcu.o
+ obj-$(CONFIG_MFD_RPISENSE_CORE)	+= rpisense-core.o
+ 
++obj-$(CONFIG_MFD_EPUCK_CORE)	+= epuck-core.o
++obj-$(CONFIG_MFD_EPUCK_LEDS)	+= epuck-leds.o
++obj-$(CONFIG_MFD_EPUCK_MOTORS)	+= epuck-motors.o
++obj-$(CONFIG_MFD_EPUCK_ENCODERS)	+= epuck-encoders.o
++obj-$(CONFIG_MFD_EPUCK_RANGEFINDERS)	+= epuck-rangefinders.o
++
+ obj-$(CONFIG_SGI_MFD_IOC3)	+= ioc3.o
+ obj-$(CONFIG_MFD_SIMPLE_MFD_I2C)	+= simple-mfd-i2c.o
+ obj-$(CONFIG_MFD_INTEL_M10_BMC)   += intel-m10-bmc.o
+diff --git a/drivers/mfd/epuck-core.c b/drivers/mfd/epuck-core.c
+new file mode 100644
+index 000000000000..62fdc43fb815
+--- /dev/null
++++ b/drivers/mfd/epuck-core.c
+@@ -0,0 +1,182 @@
++// SPDX-License-Identifier: GPL-2.0+
++
++/*
++ * Multi-function device driver for the E-Puck.
++ *
++ * Copyright (C) 2020 Michael Allwright
++ */
++
++#include <linux/atomic.h>
++#include <linux/delay.h>
++#include <linux/export.h>
++#include <linux/init.h>
++#include <linux/i2c.h>
++#include <linux/slab.h>
++#include <linux/kernel.h>
++#include <linux/mfd/core.h>
++#include <linux/mfd/epuck.h>
++#include <linux/module.h>
++#include <linux/of.h>
++#include <linux/of_device.h>
++#include <linux/sched.h>
++#include <asm/unaligned.h>
++
++/**
++ * struct epuck - the EPuck1
++ *
++ * @lock:	The lock
++ * @client:	The underlying i2c_client
++ *
++ */
++#define I2C_RETRIES 5
++
++struct epuck {
++	struct mutex lock;
++	struct i2c_client *client;
++};
++
++int epuck_read_byte(struct epuck *epuck,
++		    enum epuck_register reg,
++		    u8* byte)
++{
++	s32 ret = 0;
++	s32 attempts = 0;
++	mutex_lock(&epuck->lock);
++	for(attempts = 0; attempts < I2C_RETRIES; attempts++) {
++		usleep_range(750, 1250);
++		ret = i2c_smbus_read_byte_data(epuck->client, reg);
++		if(ret >= 0) break;
++	}
++	mutex_unlock(&epuck->lock);
++	if (ret < 0) {
++		return ret;
++	}
++	else {
++		*byte = (ret & 0xff);
++		return 0;
++	}
++}
++EXPORT_SYMBOL_GPL(epuck_read_byte);
++
++int epuck_write_byte(struct epuck *epuck,
++		     enum epuck_register reg,
++		     u8 byte)
++{
++	s32 ret = 0;
++	s32 attempts = 0;
++ 	mutex_lock(&epuck->lock);
++ 	for(attempts = 0; attempts < I2C_RETRIES; attempts++) {
++		usleep_range(750, 1250);
++		ret = i2c_smbus_write_byte_data(epuck->client, reg, byte);
++		if(ret == 0) break;
++	}
++	mutex_unlock(&epuck->lock);
++	return ret;
++}
++EXPORT_SYMBOL_GPL(epuck_write_byte);
++
++int epuck_read_word(struct epuck *epuck,
++		    enum epuck_register reg,
++		    u16* word)
++{
++	s32 ret = 0;
++	s32 attempts = 0;
++ 	mutex_lock(&epuck->lock);
++ 	for(attempts = 0; attempts < I2C_RETRIES; attempts++) {
++		usleep_range(750, 1250);
++		ret = i2c_smbus_read_word_data(epuck->client, reg);
++		if(ret >= 0) break;
++	}
++	mutex_unlock(&epuck->lock);
++	if (ret < 0) {
++		return ret;
++	}
++	else {
++		*word = (ret & 0xffff);
++		return 0;
++	}
++}
++EXPORT_SYMBOL_GPL(epuck_read_word);
++
++int epuck_write_word(struct epuck *epuck,
++		     enum epuck_register reg,
++		     u16 word)
++{
++	s32 ret = 0;
++	s32 attempts = 0;
++  	mutex_lock(&epuck->lock);
++	for(attempts = 0; attempts < I2C_RETRIES; attempts++) {
++		usleep_range(750, 1250);
++		ret = i2c_smbus_write_word_data(epuck->client, reg, word);
++		if(ret == 0) break;
++	}
++	mutex_unlock(&epuck->lock);
++	return ret;
++}
++EXPORT_SYMBOL_GPL(epuck_write_word);
++
++static const struct mfd_cell epuck_devs[] = {
++	{
++		.name = "epuck-leds",
++		.of_compatible = "gctronic,epuck-leds"
++	},
++	{
++		.name = "epuck-motors",
++		.of_compatible = "gctronic,epuck-motors"
++	},
++	{
++		.name = "epuck-encoders",
++		.of_compatible = "gctronic,epuck-encoders"
++	},
++ 	{
++		.name = "epuck-rangefinders",
++		.of_compatible = "gctronic,epuck-rangefinders"
++	},
++};
++
++static int epuck_probe(struct i2c_client *client,
++		       const struct i2c_device_id *id)
++{
++	struct device *dev = &client->dev;
++	struct epuck *epuck;
++
++	epuck = devm_kzalloc(dev, sizeof(struct epuck), GFP_KERNEL);
++
++	if (!epuck)
++		return -ENOMEM;
++
++	epuck->client = client;
++	mutex_init(&epuck->lock);
++
++	i2c_set_clientdata(client, epuck);
++
++	return devm_mfd_add_devices(dev, PLATFORM_DEVID_AUTO, epuck_devs,
++				    ARRAY_SIZE(epuck_devs), NULL, 0, NULL);
++}
++
++static const struct of_device_id epuck_of_match[] = {
++	{ .compatible = "gctronic,epuck" },
++	{ /* sentinel */ }
++};
++MODULE_DEVICE_TABLE(of, epuck_of_match);
++
++static const struct i2c_device_id epuck_id[] = {
++	{"epuck", 0},
++	{ /* sentinel */ }
++};
++MODULE_DEVICE_TABLE(i2c, epuck_id);
++
++static struct i2c_driver epuck_driver = {
++	.driver = {
++		.name	= "epuck_i2c",
++		.of_match_table = epuck_of_match,
++	},
++	.probe = epuck_probe,
++	.id_table = epuck_id,
++};
++module_i2c_driver(epuck_driver);
++
++MODULE_LICENSE("GPL");
++MODULE_AUTHOR("Michael Allwright <allsey87@gmail.com>");
++MODULE_DESCRIPTION("E-Puck core device driver");
++
+diff --git a/drivers/mfd/epuck-encoders.c b/drivers/mfd/epuck-encoders.c
+new file mode 100644
+index 000000000000..35a7c6037d44
+--- /dev/null
++++ b/drivers/mfd/epuck-encoders.c
+@@ -0,0 +1,154 @@
++// SPDX-License-Identifier: GPL-2.0+
++
++/*
++ * Encoder sensor driver for the e-puck
++ *
++ * Copyright (C) 2020 Michael Allwright
++ */
++
++
++#include <linux/delay.h>
++#include <linux/irq.h>
++#include <linux/kernel.h>
++#include <linux/mfd/epuck.h>
++#include <linux/module.h>
++#include <linux/of_device.h>
++#include <linux/platform_device.h>
++#include <linux/sched.h>
++#include <linux/slab.h>
++#include <linux/iio/buffer.h>
++#include <linux/iio/iio.h>
++#include <linux/iio/sysfs.h>
++#include <linux/iio/trigger.h>
++#include <linux/iio/trigger_consumer.h>
++#include <linux/iio/triggered_buffer.h>
++
++/**
++ * struct epuck_encoders - The encoders sensor for the E-Puck
++ *
++ * @epuck: Pointer to the e-puck core driver
++ */
++struct epuck_encoders {
++	struct epuck *epuck;
++};
++
++static const struct iio_info epuck_encoders_info = {};
++
++static const struct iio_chan_spec epuck_encoders_channels[] = {
++	{
++		.type = IIO_ANGL,
++		.indexed = true,
++		.channel = 0,
++		.scan_index = 0,
++		.scan_type = {
++			.sign = 'u',
++			.realbits = 16,
++			.storagebits = 16,
++			.endianness = IIO_LE,
++		},
++	}, {
++		.type = IIO_ANGL,
++		.indexed = true,
++		.channel = 1,
++		.scan_index = 1,
++		.scan_type = {
++			.sign = 'u',
++			.realbits = 16,
++			.storagebits = 16,
++			.endianness = IIO_LE,
++		},
++	},
++	IIO_CHAN_SOFT_TIMESTAMP(2),
++};
++
++static const unsigned long epuck_encoders_scan_masks[] = {0x3, 0};
++
++static irqreturn_t epuck_encoders_trigger_handler(int irq, void *p)
++{
++	struct iio_poll_func *pf = p;
++	struct iio_dev *indio_dev = pf->indio_dev;
++	struct epuck_encoders *encoders = iio_priv(indio_dev);
++	
++	int ret;
++	u16 values[2];
++	ret = epuck_read_word(encoders->epuck, 
++			      EPUCK_REG_MTR_STPS_LEFT,
++			      &values[0]);
++	if (ret < 0)
++		goto out;
++	ret = epuck_read_word(encoders->epuck, 
++			      EPUCK_REG_MTR_STPS_RIGHT,
++			      &values[1]);
++	if (ret < 0)
++		goto out;
++	
++	iio_push_to_buffers_with_timestamp(indio_dev, values,
++					   iio_get_time_ns(indio_dev));
++out:
++	iio_trigger_notify_done(indio_dev->trig);
++	return IRQ_HANDLED;
++}
++
++static int epuck_encoders_probe(struct platform_device *pdev)
++{
++	struct device *dev = &pdev->dev; // us
++	struct iio_dev *indio_dev;
++	struct epuck_encoders *encoders;
++	int ret = 0;
++	indio_dev = devm_iio_device_alloc(dev, sizeof(*encoders));
++	if (!indio_dev)
++		return -ENOMEM;
++	encoders = iio_priv(indio_dev);
++	/* set the parent epuck device */
++	encoders->epuck = dev_get_drvdata(dev->parent);
++	/* set up the indio_dev struct */
++	dev_set_drvdata(&pdev->dev, indio_dev);
++	indio_dev->name = "epuck-encoders";
++	indio_dev->dev.parent = &pdev->dev;
++	indio_dev->info = &epuck_encoders_info;
++	indio_dev->direction = IIO_DEVICE_DIRECTION_IN;
++	indio_dev->modes = INDIO_BUFFER_SOFTWARE;
++	indio_dev->channels = epuck_encoders_channels;
++	indio_dev->num_channels = ARRAY_SIZE(epuck_encoders_channels);
++	indio_dev->available_scan_masks = epuck_encoders_scan_masks;
++	ret = iio_triggered_buffer_setup(indio_dev,
++					 iio_pollfunc_store_time,
++					 epuck_encoders_trigger_handler,
++					 NULL);
++	if(ret < 0)
++		goto err_out;
++	ret = iio_device_register(indio_dev);
++err_out:
++	return ret;
++}
++
++static int epuck_encoders_remove(struct platform_device *pdev)
++{
++	struct iio_dev *indio_dev = platform_get_drvdata(pdev);
++
++	iio_triggered_buffer_cleanup(indio_dev);
++	iio_device_unregister(indio_dev);
++
++	return 0;
++}
++
++static const struct of_device_id epuck_encoders_of_match[] = {
++	{ .compatible = "gctronic,epuck-encoders" },
++	{ /* sentinel */ }
++};
++MODULE_DEVICE_TABLE(of, epuck_encoders_of_match);
++
++static struct platform_driver epuck_encoders_driver = {
++	.probe = epuck_encoders_probe,
++	.remove = epuck_encoders_remove,
++	.driver = {
++		.name = "epuck-encoders",
++		.of_match_table = epuck_encoders_of_match,
++	},
++};
++module_platform_driver(epuck_encoders_driver);
++
++MODULE_LICENSE("GPL");
++MODULE_AUTHOR("Michael Allwright <allsey87@gmail.com>");
++MODULE_DESCRIPTION("E-Puck encoder driver");
++
+diff --git a/drivers/mfd/epuck-leds.c b/drivers/mfd/epuck-leds.c
+new file mode 100644
+index 000000000000..201534790bdd
+--- /dev/null
++++ b/drivers/mfd/epuck-leds.c
+@@ -0,0 +1,195 @@
++// SPDX-License-Identifier: GPL-2.0+
++
++/*
++ * led actuator driver for the e-puck
++ *
++ * Copyright (C) 2020 Michael Allwright
++ */
++
++
++#include <linux/delay.h>
++#include <linux/kernel.h>
++#include <linux/mfd/epuck.h>
++#include <linux/module.h>
++#include <linux/of_device.h>
++#include <linux/platform_device.h>
++#include <linux/sched.h>
++#include <linux/slab.h>
++#include <linux/iio/buffer.h>
++#include <linux/iio/iio.h>
++#include <linux/iio/sysfs.h>
++#include <linux/iio/trigger.h>
++#include <linux/iio/trigger_consumer.h>
++#include <linux/iio/triggered_buffer.h>
++
++/**
++ * struct epuck_leds - The led actuator for the e-puck
++ *
++ * @epuck: Pointer to the e-puck core driver
++ */
++struct epuck_leds {
++	struct epuck *epuck;
++};
++
++static const struct iio_info epuck_leds_info = {};
++
++static int epuck_leds_buffer_preenable(struct iio_dev *indio_dev)
++{
++	struct epuck_leds *leds = iio_priv(indio_dev);
++	epuck_write_byte(leds->epuck,
++			 EPUCK_REG_LEDS1, 0);
++	epuck_write_byte(leds->epuck,
++			 EPUCK_REG_LEDS2, 0);
++	return 0;
++}
++
++static int epuck_leds_buffer_postdisable(struct iio_dev *indio_dev)
++{
++	struct epuck_leds *leds = iio_priv(indio_dev);
++	epuck_write_byte(leds->epuck,
++			 EPUCK_REG_LEDS1, 0);
++	epuck_write_byte(leds->epuck,
++			 EPUCK_REG_LEDS2, 0);
++	return 0;
++}
++
++static const struct iio_buffer_setup_ops epuck_leds_buffer_setup_ops = {
++	.preenable   = epuck_leds_buffer_preenable,
++	.postdisable = epuck_leds_buffer_postdisable,
++};
++
++#define EPUCK_LED(_index) {		\
++	.type = IIO_LIGHT,		\
++	.indexed = true,		\
++	.channel = _index,		\
++	.output = true,			\
++	.scan_index = _index,		\
++	.scan_type = {			\
++		.sign = 'u',		\
++		.realbits = 1,		\
++		.storagebits = 8,	\
++		.endianness = IIO_BE,	\
++	},				\
++}
++
++static const struct iio_chan_spec epuck_leds_channels[] = {
++	EPUCK_LED(0),
++	EPUCK_LED(1),
++	EPUCK_LED(2),
++	EPUCK_LED(3),
++	EPUCK_LED(4),
++	EPUCK_LED(5),
++	EPUCK_LED(6),
++	EPUCK_LED(7),
++	EPUCK_LED(8),
++	EPUCK_LED(9),
++};
++
++static const unsigned long epuck_leds_scan_masks[] = {0x03ff, 0};
++
++static irqreturn_t epuck_leds_trigger_handler(int irq, void *p)
++{
++	struct iio_poll_func *pf = p;
++	struct iio_dev *indio_dev = pf->indio_dev;
++	struct epuck_leds *leds = iio_priv(indio_dev);
++	struct iio_buffer *buffer = indio_dev->buffer;
++
++	int ret, index;
++	u8 led_config[10];
++	u8 reg1_config = 0;
++	u8 reg2_config = 0;
++
++	/* get sample from buffer */
++	ret = iio_buffer_remove_sample(buffer, led_config);
++	if (ret < 0) {
++		dev_err(&indio_dev->dev,
++			"iio_buffer_remove_sample failed: %d", ret);
++		goto out;
++	}
++	
++	/* write the ring led configuration */
++	/* this is a hack since IIO will not work with storagebits < 8 */
++	for(index = 0; index < 8; index++)
++		if(led_config[index])
++			reg1_config |= 1 << index;
++	ret = epuck_write_byte(leds->epuck,
++			       EPUCK_REG_LEDS1,
++			       reg1_config);
++	if (ret < 0) {
++		goto out;
++	}
++	
++	/* write the front and body led configuration */	
++	/* this is a hack since IIO will not work with storagebits < 8 */
++	for(index = 0; index < 2; index++)
++		if(led_config[index + 8])
++			reg2_config |= 1 << index;
++	ret = epuck_write_byte(leds->epuck,
++			       EPUCK_REG_LEDS2,
++			       reg2_config);
++out:
++	iio_trigger_notify_done(indio_dev->trig);
++	return IRQ_HANDLED;
++}
++
++
++static int epuck_leds_probe(struct platform_device *pdev)
++{
++	struct iio_dev *indio_dev;
++	struct epuck_leds *leds;
++	int ret = 0;
++
++	indio_dev = devm_iio_device_alloc(&pdev->dev, sizeof(*leds));
++	if (!indio_dev)
++		return -ENOMEM;
++	leds = iio_priv(indio_dev);
++	/* set the parent device */
++	leds->epuck = dev_get_drvdata(pdev->dev.parent);
++	/* set up the indio_dev struct */
++	dev_set_drvdata(&pdev->dev, indio_dev);
++	indio_dev->name = "epuck-leds";
++	indio_dev->dev.parent = &pdev->dev;
++	indio_dev->info = &epuck_leds_info;
++	indio_dev->direction = IIO_DEVICE_DIRECTION_OUT;
++	indio_dev->modes = INDIO_BUFFER_SOFTWARE;
++	indio_dev->channels = epuck_leds_channels;
++	indio_dev->num_channels = ARRAY_SIZE(epuck_leds_channels);
++	indio_dev->available_scan_masks = epuck_leds_scan_masks;
++
++	ret = iio_triggered_buffer_setup(indio_dev, NULL,
++					 epuck_leds_trigger_handler,
++					 &epuck_leds_buffer_setup_ops);
++	if(ret < 0)
++		goto err_out;
++	ret = iio_device_register(indio_dev);
++err_out:
++	return ret;
++}
++
++static int epuck_leds_remove(struct platform_device *pdev)
++{
++	struct iio_dev *indio_dev = platform_get_drvdata(pdev);
++	iio_triggered_buffer_cleanup(indio_dev);
++	iio_device_unregister(indio_dev);
++	return 0;
++}
++
++static const struct of_device_id epuck_leds_of_match[] = {
++	{ .compatible = "gctronic,epuck-leds" },
++	{ /* sentinel */ }
++};
++MODULE_DEVICE_TABLE(of, epuck_leds_of_match);
++
++static struct platform_driver epuck_leds_driver = {
++	.probe = epuck_leds_probe,
++	.remove = epuck_leds_remove,
++	.driver = {
++		.name = "epuck-leds",
++		.of_match_table = epuck_leds_of_match,
++	},
++};
++module_platform_driver(epuck_leds_driver);
++
++MODULE_LICENSE("GPL");
++MODULE_AUTHOR("Michael Allwright <allsey87@gmail.com>");
++MODULE_DESCRIPTION("E-Puck LED driver");
+diff --git a/drivers/mfd/epuck-motors.c b/drivers/mfd/epuck-motors.c
+new file mode 100644
+index 000000000000..40abc4547e5d
+--- /dev/null
++++ b/drivers/mfd/epuck-motors.c
+@@ -0,0 +1,187 @@
++// SPDX-License-Identifier: GPL-2.0+
++
++/*
++ * Motor actuator driver for the e-puck
++ *
++ * Copyright (C) 2020 Michael Allwright
++ */
++
++
++#include <linux/delay.h>
++#include <linux/kernel.h>
++#include <linux/mfd/epuck.h>
++#include <linux/module.h>
++#include <linux/of_device.h>
++#include <linux/platform_device.h>
++#include <linux/sched.h>
++#include <linux/slab.h>
++#include <linux/iio/buffer.h>
++#include <linux/iio/iio.h>
++#include <linux/iio/sysfs.h>
++#include <linux/iio/trigger.h>
++#include <linux/iio/trigger_consumer.h>
++#include <linux/iio/triggered_buffer.h>
++
++/**
++ * struct epuck_motors - The motor actuator for the e-puck
++ *
++ * @epuck: Pointer to the e-puck core driver
++ */
++struct epuck_motors {
++	struct epuck *epuck;
++};
++
++static const struct iio_info epuck_motors_info = {};
++
++static int epuck_motors_buffer_preenable(struct iio_dev *indio_dev)
++{
++	struct epuck_motors *motors = iio_priv(indio_dev);
++	epuck_write_word(motors->epuck,
++			 EPUCK_REG_MTR_VEL_LEFT, 0);
++	epuck_write_word(motors->epuck,
++			 EPUCK_REG_MTR_VEL_RIGHT, 0);
++	return 0;
++}
++
++static int epuck_motors_buffer_postdisable(struct iio_dev *indio_dev)
++{
++	struct epuck_motors *motors = iio_priv(indio_dev);
++	epuck_write_word(motors->epuck,
++			 EPUCK_REG_MTR_VEL_LEFT, 0);
++	epuck_write_word(motors->epuck,
++			 EPUCK_REG_MTR_VEL_RIGHT, 0);
++	return 0;
++}
++
++static const struct iio_buffer_setup_ops epuck_motors_buffer_setup_ops = {
++	.preenable   = epuck_motors_buffer_preenable,
++	.postdisable = epuck_motors_buffer_postdisable,
++};
++
++static const struct iio_chan_spec epuck_motors_channels[] = {
++	{
++		.type = IIO_ANGL_VEL,
++		.indexed = true,
++		.channel = 0,
++		.output = true,
++		.scan_index = 0,
++		.scan_type = {
++			.sign = 's',
++			.realbits = 16,
++			.storagebits = 16,
++			.endianness = IIO_LE,
++	},
++	}, {
++		.type = IIO_ANGL_VEL,
++		.indexed = true,
++		.channel = 1,
++		.output = true,
++		.scan_index = 1,
++		.scan_type = {
++			.sign = 's',
++			.realbits = 16,
++			.storagebits = 16,
++			.endianness = IIO_LE,
++		},
++	}
++};
++
++static const unsigned long epuck_motors_scan_masks[] = {0x3, 0};
++
++static irqreturn_t epuck_motors_trigger_handler(int irq, void *p)
++{
++	struct iio_poll_func *pf = p;
++	struct iio_dev *indio_dev = pf->indio_dev;
++	struct epuck_motors *motors = iio_priv(indio_dev);
++	struct iio_buffer *buffer = indio_dev->buffer;
++
++	int ret;
++	u8 velocities[4];
++	
++	/* get sample from buffer */
++	ret = iio_buffer_remove_sample(buffer, velocities);
++	if (ret < 0) {
++		dev_err(&indio_dev->dev,
++			"iio_buffer_remove_sample failed: %d", ret);
++		goto out;
++	}
++	
++	/* write left velocity */
++	ret = epuck_write_word(motors->epuck,
++			       EPUCK_REG_MTR_VEL_LEFT,
++			       (velocities[1] << 8) | velocities[0]);
++	if (ret < 0) {
++		goto out;
++	}
++	
++	/* write right velocity */	
++	ret = epuck_write_word(motors->epuck,
++			       EPUCK_REG_MTR_VEL_RIGHT,
++			       (velocities[3] << 8) | velocities[2]);
++out:
++	iio_trigger_notify_done(indio_dev->trig);
++	return IRQ_HANDLED;
++}
++
++
++static int epuck_motors_probe(struct platform_device *pdev)
++{
++	struct iio_dev *indio_dev;
++	struct epuck_motors *motors;
++	int ret = 0;
++
++	indio_dev = devm_iio_device_alloc(&pdev->dev, sizeof(*motors));
++	if (!indio_dev)
++		return -ENOMEM;
++	motors = iio_priv(indio_dev);
++	/* set the parent device */
++	motors->epuck = dev_get_drvdata(pdev->dev.parent);
++	/* set up the indio_dev struct */
++	dev_set_drvdata(&pdev->dev, indio_dev);
++	indio_dev->name = "epuck-motors";
++	indio_dev->dev.parent = &pdev->dev;
++	indio_dev->info = &epuck_motors_info;
++	indio_dev->direction = IIO_DEVICE_DIRECTION_OUT;
++	indio_dev->modes = INDIO_BUFFER_SOFTWARE;
++	indio_dev->channels = epuck_motors_channels;
++	indio_dev->num_channels = ARRAY_SIZE(epuck_motors_channels);
++	indio_dev->available_scan_masks = epuck_motors_scan_masks;
++
++	ret = iio_triggered_buffer_setup(indio_dev, NULL,
++					 epuck_motors_trigger_handler,
++					 &epuck_motors_buffer_setup_ops);
++	if(ret < 0)
++		goto err_out;
++	ret = iio_device_register(indio_dev);
++err_out:
++	return ret;
++}
++
++static int epuck_motors_remove(struct platform_device *pdev)
++{
++	struct iio_dev *indio_dev = platform_get_drvdata(pdev);
++	iio_triggered_buffer_cleanup(indio_dev);
++	iio_device_unregister(indio_dev);
++	return 0;
++}
++
++static const struct of_device_id epuck_motors_of_match[] = {
++	{ .compatible = "gctronic,epuck-motors" },
++	{ /* sentinel */ }
++};
++MODULE_DEVICE_TABLE(of, epuck_motors_of_match);
++
++static struct platform_driver epuck_motors_driver = {
++	.probe = epuck_motors_probe,
++	.remove = epuck_motors_remove,
++	.driver = {
++		.name = "epuck-motors",
++		.of_match_table = epuck_motors_of_match,
++	},
++};
++module_platform_driver(epuck_motors_driver);
++
++MODULE_LICENSE("GPL");
++MODULE_AUTHOR("Michael Allwright <allsey87@gmail.com>");
++MODULE_DESCRIPTION("E-Puck motor driver");
++
+diff --git a/drivers/mfd/epuck-rangefinders.c b/drivers/mfd/epuck-rangefinders.c
+new file mode 100644
+index 000000000000..648ba489465e
+--- /dev/null
++++ b/drivers/mfd/epuck-rangefinders.c
+@@ -0,0 +1,191 @@
++// SPDX-License-Identifier: GPL-2.0+
++
++/*
++ * rangefinder sensor driver for the e-puck
++ *
++ * Copyright (C) 2020 Michael Allwright
++ */
++
++#include <linux/delay.h>
++#include <linux/irq.h>
++#include <linux/kernel.h>
++#include <linux/mfd/epuck.h>
++#include <linux/module.h>
++#include <linux/of_device.h>
++#include <linux/platform_device.h>
++#include <linux/sched.h>
++#include <linux/slab.h>
++#include <linux/iio/buffer.h>
++#include <linux/iio/iio.h>
++#include <linux/iio/sysfs.h>
++#include <linux/iio/trigger.h>
++#include <linux/iio/trigger_consumer.h>
++#include <linux/iio/triggered_buffer.h>
++
++/**
++ * struct epuck_rangefinders - The rangefinders sensor for the EPuck
++ *
++ * @epuck: Pointer to the e-puck core driver
++ */
++struct epuck_rangefinders {
++	struct epuck *epuck;
++};
++
++static const struct iio_info epuck_rangefinders_info = {};
++
++static int epuck_rangefinders_buffer_preenable(struct iio_dev *indio_dev)
++{
++	struct epuck_rangefinders *rfs = iio_priv(indio_dev);
++	/* enable all sensors */
++	epuck_write_byte(rfs->epuck,
++			 EPUCK_REG_IR_EN, 0xff);
++	return 0;
++}
++
++static int epuck_rangefinders_buffer_postdisable(struct iio_dev *indio_dev)
++{
++	struct epuck_rangefinders *rfs = iio_priv(indio_dev);
++	/* disable all sensors */
++	epuck_write_byte(rfs->epuck,
++			 EPUCK_REG_IR_EN, 0x00);
++	return 0;
++}
++
++static const struct iio_buffer_setup_ops epuck_rangefinders_buffer_setup_ops = {
++	.preenable   = epuck_rangefinders_buffer_preenable,
++	.postdisable = epuck_rangefinders_buffer_postdisable,
++};
++
++#define EPUCK_RANGEFINDER(_index) {	\
++	.type = IIO_PROXIMITY,		\
++	.indexed = true,		\
++	.channel = _index,		\
++	.output = false,		\
++	.scan_index = _index,		\
++	.scan_type = {			\
++		.sign = 'u',		\
++		.realbits = 16,		\
++		.storagebits = 16,	\
++		.endianness = IIO_LE,	\
++	},				\
++}, {					\
++	.type = IIO_LIGHT,		\
++	.indexed = true,		\
++	.channel = _index,		\
++	.output = false,		\
++	.scan_index = _index + 8,	\
++	.scan_type = {			\
++		.sign = 'u',		\
++		.realbits = 16,		\
++		.storagebits = 16,	\
++		.endianness = IIO_LE,	\
++	},				\
++}
++
++static const struct iio_chan_spec epuck_rangefinders_channels[] = {
++	EPUCK_RANGEFINDER(0),
++	EPUCK_RANGEFINDER(1),
++	EPUCK_RANGEFINDER(2),
++	EPUCK_RANGEFINDER(3),
++	EPUCK_RANGEFINDER(4),
++	EPUCK_RANGEFINDER(5),
++	EPUCK_RANGEFINDER(6),
++	EPUCK_RANGEFINDER(7),
++	/* each of the above occupies scan index + 8 */
++	IIO_CHAN_SOFT_TIMESTAMP(16),
++};
++
++static const unsigned long epuck_rangefinders_scan_masks[] = {0xffff, 0};
++
++static irqreturn_t epuck_rangefinders_trigger_handler(int irq, void *p)
++{
++	struct iio_poll_func *pf = p;
++	struct iio_dev *indio_dev = pf->indio_dev;
++	struct epuck_rangefinders *rangefinders = iio_priv(indio_dev);
++	
++	int ret;
++	int i;
++	u16 values[16];
++	
++	for(i = 0; i < 8; i++) {
++		ret = epuck_read_word(rangefinders->epuck, 
++				      EPUCK_REG_IR_PRX0 + i,
++				      &values[i]);
++		if (ret < 0)
++			goto out;
++		ret = epuck_read_word(rangefinders->epuck, 
++				      EPUCK_REG_IR_AMB0 + i,
++				      &values[i + 8]);
++		if (ret < 0)
++			goto out;
++	}
++	iio_push_to_buffers_with_timestamp(indio_dev, values,
++					   iio_get_time_ns(indio_dev));
++out:
++	iio_trigger_notify_done(indio_dev->trig);
++	return IRQ_HANDLED;
++}
++
++static int epuck_rangefinders_probe(struct platform_device *pdev)
++{
++	struct device *dev = &pdev->dev; // us
++	struct iio_dev *indio_dev;
++	struct epuck_rangefinders *rangefinders;
++	int ret = 0;
++	indio_dev = devm_iio_device_alloc(dev, sizeof(*rangefinders));
++	if (!indio_dev)
++		return -ENOMEM;
++	rangefinders = iio_priv(indio_dev);
++	/* set the parent device */
++	rangefinders->epuck = dev_get_drvdata(dev->parent);
++	/* set up the indio_dev struct */
++	dev_set_drvdata(&pdev->dev, indio_dev);
++	indio_dev->name = "epuck-rangefinders";
++	indio_dev->dev.parent = &pdev->dev;
++	indio_dev->info = &epuck_rangefinders_info;
++	indio_dev->direction = IIO_DEVICE_DIRECTION_IN;
++	indio_dev->modes = INDIO_BUFFER_SOFTWARE;
++	indio_dev->channels = epuck_rangefinders_channels;
++	indio_dev->num_channels = ARRAY_SIZE(epuck_rangefinders_channels);
++	indio_dev->available_scan_masks = epuck_rangefinders_scan_masks;
++	ret = iio_triggered_buffer_setup(indio_dev,
++					 iio_pollfunc_store_time,
++					 epuck_rangefinders_trigger_handler,
++					 &epuck_rangefinders_buffer_setup_ops);
++	if(ret < 0)
++		goto err_out;
++	ret = iio_device_register(indio_dev);
++err_out:
++	return ret;
++}
++
++static int epuck_rangefinders_remove(struct platform_device *pdev)
++{
++	struct iio_dev *indio_dev = platform_get_drvdata(pdev);
++
++	iio_triggered_buffer_cleanup(indio_dev);
++	iio_device_unregister(indio_dev);
++
++	return 0;
++}
++
++static const struct of_device_id epuck_rangefinders_of_match[] = {
++	{ .compatible = "gctronic,epuck-rangefinders" },
++	{ /* sentinel */ }
++};
++MODULE_DEVICE_TABLE(of, epuck_rangefinders_of_match);
++
++static struct platform_driver epuck_rangefinders_driver = {
++	.probe = epuck_rangefinders_probe,
++	.remove = epuck_rangefinders_remove,
++	.driver = {
++		.name = "epuck-rangefinders",
++		.of_match_table = epuck_rangefinders_of_match,
++	},
++};
++module_platform_driver(epuck_rangefinders_driver);
++
++MODULE_LICENSE("GPL");
++MODULE_AUTHOR("Michael Allwright <allsey87@gmail.com>");
++MODULE_DESCRIPTION("E-Puck rangefinder driver");
++
+diff --git a/include/linux/mfd/epuck.h b/include/linux/mfd/epuck.h
+new file mode 100644
+index 000000000000..bb31bb298c9c
+--- /dev/null
++++ b/include/linux/mfd/epuck.h
+@@ -0,0 +1,53 @@
++/*
++ * Interface definitions for the core device driver for the E-Puck.
++ */
++
++#ifndef _LINUX_EPUCK_H_
++#define _LINUX_EPUCK_H_
++
++enum epuck_register {
++	/* leds registers */
++	EPUCK_REG_LEDS1 = 0,
++	EPUCK_REG_LEDS2 = 1,
++	/* motor registers */
++	EPUCK_REG_MTR_VEL_LEFT = 2,
++	EPUCK_REG_MTR_VEL_RIGHT = 3,
++	EPUCK_REG_MTR_STPS_LEFT = 4,
++	EPUCK_REG_MTR_STPS_RIGHT = 5,
++	/* IR registers */
++	EPUCK_REG_IR_EN = 6,
++	EPUCK_REG_IR_PRX0 = 7,
++	EPUCK_REG_IR_PRX1 = 8,
++	EPUCK_REG_IR_PRX2 = 9,
++	EPUCK_REG_IR_PRX3 = 10,
++	EPUCK_REG_IR_PRX4 = 11,
++	EPUCK_REG_IR_PRX5 = 12,
++	EPUCK_REG_IR_PRX6 = 13,
++	EPUCK_REG_IR_PRX7 = 14,
++	EPUCK_REG_IR_AMB0 = 15,
++	EPUCK_REG_IR_AMB1 = 16,
++	EPUCK_REG_IR_AMB2 = 17,
++	EPUCK_REG_IR_AMB3 = 18,
++	EPUCK_REG_IR_AMB4 = 19,
++	EPUCK_REG_IR_AMB5 = 20,
++	EPUCK_REG_IR_AMB6 = 21,
++	EPUCK_REG_IR_AMB7 = 22,
++};
++
++struct epuck;
++
++int epuck_read_byte(struct epuck *dspic,
++		    enum epuck_register reg,
++		    u8* byte);
++int epuck_write_byte(struct epuck *dspic,
++		     enum epuck_register reg,
++		     u8 byte);
++int epuck_read_word(struct epuck *dspic,
++		    enum epuck_register reg,
++		    u16* word);
++int epuck_write_word(struct epuck *dspic,
++		     enum epuck_register reg,
++		     u16 word);
++
++#endif /* _LINUX_EPUCK_H_ */
++
+-- 
+2.25.1
+

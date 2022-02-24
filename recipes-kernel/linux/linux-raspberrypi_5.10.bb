@@ -10,16 +10,18 @@ KMETA = "kernel-meta"
 SRC_URI = " \
     git://github.com/raspberrypi/linux.git;name=machine;branch=${LINUX_RPI_BRANCH};protocol=https \
     git://git.yoctoproject.org/yocto-kernel-cache;type=kmeta;name=meta;branch=${LINUX_RPI_KMETA_BRANCH};destsuffix=${KMETA} \
-    file://0003-iio-Add-support-for-low-speed-output-buffers.patch \
-    file://0004-mfd-Add-support-for-the-E-Puck-mobile-robot.patch \
-    file://0005-iio-Add-E-Puck-ground-sensor.patch \
-    file://0006-media-Add-E-Puck-camera-configuration-driver.patch \
-    file://0007-dts-Add-Pi-Puck-device-tree-overlay.patch \
+    file://0001-Use-IIO-from-Analog-Devices.patch \
+    file://0002-Add-E-Puck-multi-function-device.patch \
+    file://0003-Add-E-Puck-ground-sensor.patch \
+    file://0004-Add-E-Puck-camera-configuration-driver.patch \
+    file://0005-Add-Pi-Puck-device-tree.patch \
     file://powersave.cfg \
     file://cryptography.cfg \
     file://epuck.cfg \
 "
 
 require linux-raspberrypi.inc
+
+KERNEL_MODULE_AUTOLOAD += " iio-trig-sysfs"
 
 KERNEL_DTC_FLAGS += "-@ -H epapr"
