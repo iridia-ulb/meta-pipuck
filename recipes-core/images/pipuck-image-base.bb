@@ -11,6 +11,11 @@ IMAGE_INSTALL:append = " \
   yavta \
   mjpg-streamer \
   argos3-pipuck \
+  libcamera \
+  libcamera-apps \
+  gstreamer1.0-plugins-good \
+  gstreamer1.0-plugins-base \
+  v4l-utils \
   fernbedienung \
   python3 \
   python3-modules \

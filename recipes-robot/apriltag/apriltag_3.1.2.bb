@@ -9,4 +9,4 @@ SRC_URI = "git://github.com/AprilRobotics/apriltag;tag=${PV};protocol=http"
 
 S = "${WORKDIR}/git"
 
-FILES_${PN} += "${prefix}/*"
+FILES:${PN} += "${prefix}/*"

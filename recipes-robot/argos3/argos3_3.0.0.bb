@@ -9,10 +9,10 @@ RDEPENDS_${PN} = "lua"
 inherit cmake
 
 SRC_URI = " \
-   git://github.com/allsey87/argos3-upstream;protocol=http \
+   git://github.com/ilpincy/argos3;protocol=http \
 "
 
-SRCREV = "e975a52c6ac2b2aa8dc735ec4a873e91ee63c289"
+SRCREV = "eb28ed8e2a2db1f8b2c8c381eef237db70750fbe"
 
 S = "${WORKDIR}/git"
 
@@ -20,5 +20,5 @@ OECMAKE_SOURCEPATH = "${S}/src"
 
 EXTRA_OECMAKE += "-DARGOS_BUILD_FOR=pi-puck -DARGOS_DOCUMENTATION=OFF"
 
-FILES_${PN}-doc += "${prefix}/doc"
+FILES:${PN}-doc += "${prefix}/doc"
 

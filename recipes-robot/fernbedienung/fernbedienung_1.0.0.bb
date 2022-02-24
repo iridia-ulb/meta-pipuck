@@ -23,5 +23,5 @@ do_install() {
    install -m 0644 ${WORKDIR}/fernbedienung.service ${D}${systemd_unitdir}/system/
 }
 
-FILES_${PN} = "${libdir}/fernbedienung/service.py ${systemd_unitdir}/system/fernbedienung.service"
+FILES:${PN} = "${libdir}/fernbedienung/service.py ${systemd_unitdir}/system/fernbedienung.service"
 

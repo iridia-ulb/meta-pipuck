@@ -18,7 +18,7 @@ OECMAKE_SOURCEPATH = "${S}/src"
 # Since the base package name (BPN) is argos3-pipuck and not argos3, Bitbake will
 # not automatically collect the files that we install inside ${libdir}/argos3,
 # ${datadir}/argos3, and ${includedir}/argos3.
-FILES_${PN} += "${libdir}/argos3/*"
-FILES_${PN} += "${datadir}/argos3/*"
-FILES_${PN} += "${includedir}/argos3/*"
+FILES:${PN} += "${libdir}/argos3/*"
+FILES:${PN} += "${datadir}/argos3/*"
+FILES:${PN} += "${includedir}/argos3/*"
 

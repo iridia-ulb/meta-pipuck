@@ -15,5 +15,5 @@ S = "${WORKDIR}/git/mjpg-streamer-experimental"
 
 #EXTRA_OECMAKE = "-DENABLE_HTTP_MANAGEMENT=ON"
 
-FILES_${PN} += "${libdir}/*.so"
+FILES:${PN} += "${libdir}/*.so"
 
