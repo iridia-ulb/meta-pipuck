@@ -11,6 +11,7 @@ IMAGE_INSTALL:append = " \
   yavta \
   mjpg-streamer \
   argos3-pipuck \
+  argos3-pipuck-omnidirectional-camera \
   libcamera \
   libcamera-apps \
   gstreamer1.0-plugins-good \
@@ -21,4 +22,21 @@ IMAGE_INSTALL:append = " \
   python3-modules \
 "
 
+set_local_timezone() {
+    ln -sf /usr/share/zoneinfo/Europe/Brussels ${IMAGE_ROOTFS}/etc/localtime
+}
+
+set_motd() {
+    printf "\nDo you want ants!? Because that's how you get ants!\n" > ${IMAGE_ROOTFS}/etc/motd
+}
+
+preload_libcamera_v4l2compat() {
+    echo "export LD_PRELOAD=/usr/lib/v4l2-compat.so.0" >> ${IMAGE_ROOTFS}/etc/profile
+}
+
+ROOTFS_POSTPROCESS_COMMAND += " \
+    set_local_timezone ; \
+    set_motd ; \
+    preload_libcamera_v4l2compat ; \
+ "
 
