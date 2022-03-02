@@ -19,17 +19,20 @@ We now need to clone the layers for the build system as follows:
 # Switch to the build location
 cd /home/$(id -un)/yocto-pipuck
 # Clone the Yocto repository
-git clone git://git.yoctoproject.org/poky --branch honister --single-branch
+git clone git://git.yoctoproject.org/poky \
+ --branch honister --single-branch
 # Clone additional layers inside the Yocto repository
 cd poky
-git clone git://git.openembedded.org/meta-openembedded --branch honister --single-branch
+git clone git://git.openembedded.org/meta-openembedded \
+ --branch honister --single-branch
 git clone https://github.com/iridia-ulb/meta-pipuck.git
 ```
 
 ### Create the Docker image
 The following command will execute the Dockerfile in the meta-pipuck repository and create a Docker image based on Ubuntu 20.04 LTS. The image will contain a user and a group, which match the identifiers of current user and group. Setting the user and group in this way enables trivial access to the build system from the host.
 ```sh
-sudo docker build -t yocto-pipuck:latest https://github.com/iridia-ulb/meta-pipuck.git#:docker \
+sudo docker build -t yocto-pipuck:latest \
+ https://github.com/iridia-ulb/meta-pipuck.git#:docker \
  --build-arg host_user_id=$(id -u) \
  --build-arg host_group_id=$(id -g)
 ```
@@ -37,8 +40,10 @@ sudo docker build -t yocto-pipuck:latest https://github.com/iridia-ulb/meta-pipu
 ### Create the Docker container
 Once the above command has completed successfully, you can run the following command to create a container from the image. Note the two paths given after the `-v` option. The format of this argument is `path/on/host:path/in/container` where `path/on/host` is a directory on your host system and `path/in/container` is a directory inside the Docker container. This command will map the home directory inside the container to a directory called `yocto-pipuck` under the current user's home directory on the host.
 ```sh
-sudo docker create --tty --interactive --volume /home/$(id -un)/yocto-pipuck:/home/developer \
- --name yocto-pipuck --hostname yocto-pipuck yocto-pipuck:latest
+sudo docker create --tty --interactive \
+ --volume /home/$(id -un)/yocto-pipuck:/home/developer \
+ --name yocto-pipuck \
+ --hostname yocto-pipuck yocto-pipuck:latest
 ```
 After executing this command, you should have a new container with the build environment. The following commands will start and attach to that container.
 
@@ -58,11 +63,12 @@ Occasionally, the build can fail due to internet connectivity issues or due to a
 ## Copying the image
 The most straightforward way to burn a bootable image to the SD card is to use `bmaptool` from Intel. On Ubuntu, this package can be installed with `sudo apt install bmap-tools`. Most distributions of Linux should have a similar package that can be installed.
 
-To burn the image, you need to locate the output image from the build system and to identify the device to which you would like to copy the image. The output image is called `pipuck-image-base-raspberrypi0-wifi.wic.bz2` and `pipuck-image-base-raspberrypi0-wifi.wic.bmap`. These files should be located under `yocto-pipuck/poky/build/tmp/deploy/images/raspberrypi0-wifi`. The device (probably an SD card) that you want to write to will usually be something like `/dev/sdX` or `/dev/mmcblkX`. The easiest way to find out is to inspect the output of `dmesg` before and after inserting the SD card into your computer. You will need to unmount the device before burning the image. Be careful -- writing the image to the wrong device will result in data loss.
+To burn the image, you need to locate the output image from the build system and to identify the device to which you would like to copy the image. The output image is called `pipuck-image-base``-raspberrypi0-wifi.wic.bz2` and `pipuck-image-base``-raspberrypi0-wifi.wic.bmap`. These files should be located under `yocto-pipuck/poky/build/tmp/deploy/images/raspberrypi0-wifi`. The device (probably an SD card) that you want to write to will usually be something like `/dev/sdX` or `/dev/mmcblkX`. The easiest way to find out is to inspect the output of `dmesg` before and after inserting the SD card into your computer. You will need to unmount the device before burning the image. Be careful -- writing the image to the wrong device will result in data loss.
 
 ```sh
 umount /dev/DEVICE*
-sudo bmaptool copy PATH/TO/pipuck-image-base-raspberrypi0-wifi.wic.bmap /dev/DEVICE
+sudo bmaptool copy PATH/TO/pipuck-image-base-raspberrypi0-wifi.wic.bmap \
+ /dev/DEVICE
 ```
 
 ## Booting the image and accessing the console
