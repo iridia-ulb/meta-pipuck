@@ -1,7 +1,7 @@
 # The meta-pipuck layer for the Yocto build system
 
 ## Description
-The meta-pipuck repository contains a layer for the Yocto build system, which generates a complete, bootable Linux OS ready to be run on the Pi-Puck mobile robot. This layer is based on the [meta-raspberrypi](https://github.com/agherzan/meta-raspberrypi) layer. The system comes preinstalled with:
+The [meta-pipuck repository](https://github.com/iridia-ulb/meta-pipuck) contains a layer for the Yocto build system, which generates a complete, bootable Linux OS ready to be run on the Pi-Puck mobile robot. This layer is based on the [meta-raspberrypi](https://github.com/agherzan/meta-raspberrypi) layer. The system comes preinstalled with:
 - ARGoS3 and a plugin for the Pi-Puck
 - Python3
 
@@ -34,8 +34,8 @@ sudo docker build -t yocto-pipuck:latest https://github.com/iridia-ulb/meta-pipu
  --build-arg host_group_id=$(id -g)
 ```
 
-Create the Docker container
-Once the above command has completed sucessfully, you can run the following command to create a container from the image. Note the two paths given after the `-v` option. The format of this argument is `path/on/host:path/in/container` where `path/on/host` is a directory on your host system and `path/in/container` is a directory inside the Docker container. This command will map the home directory inside the container to a directory called `yocto-pipuck` under the current users home directory on the host.
+### Create the Docker container
+Once the above command has completed successfully, you can run the following command to create a container from the image. Note the two paths given after the `-v` option. The format of this argument is `path/on/host:path/in/container` where `path/on/host` is a directory on your host system and `path/in/container` is a directory inside the Docker container. This command will map the home directory inside the container to a directory called `yocto-pipuck` under the current user's home directory on the host.
 ```sh
 sudo docker create --tty --interactive --volume /home/$(id -un)/yocto-pipuck:/home/developer \
  --name yocto-pipuck --hostname yocto-pipuck yocto-pipuck:latest
