@@ -2,6 +2,7 @@
 
 ## Description
 The [meta-pipuck repository](https://github.com/iridia-ulb/meta-pipuck) contains a layer for the Yocto build system, which generates a complete, bootable Linux OS ready to be run on the Pi-Puck mobile robot. This layer is based on the [meta-raspberrypi](https://github.com/agherzan/meta-raspberrypi) layer. The system comes preinstalled with:
+
 - ARGoS3 and a plugin for the Pi-Puck
 - Python3
 
